@@ -1,5 +1,7 @@
 # Transitioner, golang FSM
 
+Supports Events, Transitions, Guards and Callbacks (on global FSM and Transition levels).
+
 ## Usage
 
 ```go
@@ -30,7 +32,8 @@ func main() {
                 {
                     Name: "toggle",
                     Transitions: []transitioner.TransitionDesc{
-                        {From: []string{"sleeping"}, To: "running"}, // Will be used first suitable transition
+                    	// Will be used first suitable transition
+                        {From: []string{"sleeping"}, To: "running"},
                         {From: []string{"running"}, To: "sleeping"},
                     },
                 },
@@ -59,9 +62,10 @@ func main() {
                         {
                             From: []string{"running"},
                             To:   "sleeping",
+                            // event "stop" will never transit from running to sleeping
                             Guards: []transitioner.GuardDesc{
                                 {If: func(fsm *transitioner.FSM) bool {
-                                    return false // event "stop" will never transit from running to sleeping
+                                    return false
                                 }},
                             },
                         },
@@ -84,8 +88,6 @@ func main() {
 
     job.FSM.Fire("toggle")
     fmt.Println(job.FSM.Current) // sleeping
-
-
 }
 
 ```
