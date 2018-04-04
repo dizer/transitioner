@@ -9,6 +9,7 @@ type FSM struct {
 	Object  interface{}
 	Desc    FSMDesc
 	Current string
+	Gorm    GormIntegration
 }
 
 type FSMDesc struct {
@@ -126,7 +127,7 @@ func (transition *TransitionDesc) Apply(fsm *FSM) {
 		return fsm, nil
 	}
 
-	aroundCbs := transition.Callbacks.Around
+	aroundCbs := append(fsm.Desc.Callbacks.Around, transition.Callbacks.Around...)
 
 	cbStack := make([]func(*FSM, error) (*FSM, error), len(aroundCbs)+1)
 	cbStack[0] = fn
