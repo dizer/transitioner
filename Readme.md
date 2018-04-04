@@ -32,7 +32,7 @@ func main() {
                 {
                     Name: "toggle",
                     Transitions: []transitioner.TransitionDesc{
-                    	// Will be used first suitable transition
+                        // Will be used first suitable transition
                         {From: []string{"sleeping"}, To: "running"},
                         {From: []string{"running"}, To: "sleeping"},
                     },
@@ -45,10 +45,11 @@ func main() {
                             From: []string{"sleeping"},
                             To:   "running",
                             Callbacks: transitioner.CallbacksDesc{
-                                After: []func(*transitioner.FSM){
-                                    func(fsm *transitioner.FSM) {
+                                After: []func(*transitioner.FSM) error {
+                                    func(fsm *transitioner.FSM) error {
                                         job := fsm.Object.(*Job)
                                         job.Notify()
+                                        return nil
                                     },
                                 },
                             },

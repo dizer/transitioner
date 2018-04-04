@@ -190,10 +190,11 @@ func TestCallbacks(t *testing.T) {
 							From: []string{"initialized"},
 							To:   "failed",
 							Callbacks: CallbacksDesc{
-								After: []func(*FSM){
-									func(fsm *FSM) {
+								After: []func(*FSM) error{
+									func(fsm *FSM) error {
 										obj := fsm.Object.(*testObj)
 										obj.AnotherField = "failure data"
+										return nil
 									},
 								},
 							},
@@ -212,5 +213,61 @@ func TestCallbacks(t *testing.T) {
 	if obj.AnotherField != "failure data" {
 		t.Error("Callbacks shoud be executes")
 	}
+}
 
+func TestCallbacksChain(t *testing.T) {
+	result := ""
+
+	fsm := Init(
+		FSMDesc{
+			Initial: "initialized",
+			Events: []EventDesc{
+				{
+					Name: "start",
+					Transitions: []TransitionDesc{
+						{
+							From: []string{"initialized"},
+							To:   "running",
+							Callbacks: CallbacksDesc{
+								Around: []func(*FSM, func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
+									func(fsm *FSM, fn func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
+										return func(fsm *FSM, err error) (*FSM, error) {
+											if err != nil {
+												return fsm, err
+											}
+											result = result + "CB1 > "
+											retFSM, retERR := fn(fsm, err)
+											result = result + " < CB1"
+											return retFSM, retERR
+										}
+									},
+									func(fsm *FSM, fn func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
+										return func(fsm *FSM, err error) (*FSM, error) {
+											if err != nil {
+												return fsm, err
+											}
+											result = result + "CB2 > "
+											retFSM, retERR := fn(fsm, err)
+											result = result + " < CB2"
+											return retFSM, retERR
+										}
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	fsm.Fire("start")
+
+	if fsm.Current != "running" {
+		t.Error("Callbacks shoud stop transition")
+	}
+
+	if result != "CB2 > CB1 >  < CB1 < CB2" {
+		t.Error("around callbacks shoud be stacked")
+	}
 }

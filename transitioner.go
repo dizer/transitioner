@@ -34,8 +34,9 @@ type GuardDesc struct {
 }
 
 type CallbacksDesc struct {
-	Before []func(*FSM)
-	After  []func(*FSM)
+	Before []func(*FSM) error
+	After  []func(*FSM) error
+	Around []func(*FSM, func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error)
 }
 
 type OptionalParams struct {
@@ -45,14 +46,6 @@ type OptionalParams struct {
 type BindParams struct {
 	BindTo string
 }
-
-// func BindFSM(bind BindParams, object interface{}, desc FSMDesc, optionals ...OptionalParams) *FSM {
-// 	optional := OptionalParams{
-// 		BindTo: bind.BindTo,
-// 	}
-// 	fsm := Init(desc, append(optionals, optional)...)
-// 	return fsm
-// }
 
 func (fsm *FSM) Bind(object interface{}, bindField string) {
 	fsm.Object = object
@@ -65,8 +58,6 @@ func (fsm *FSM) Bind(object interface{}, bindField string) {
 func Init(desc FSMDesc, optionals ...OptionalParams) *FSM {
 	fsm := FSM{
 		Desc: desc,
-		// Events: events,
-		// Object: object,
 	}
 	fsm.Load()
 	fsm.ApplyOptionals(optionals)
@@ -76,9 +67,10 @@ func Init(desc FSMDesc, optionals ...OptionalParams) *FSM {
 func (fsm *FSM) ApplyOptionals(optionals []OptionalParams) {
 	for _, optional := range optionals {
 		if optional.BindTo != "" {
-			cb := func(fsm *FSM) {
+			cb := func(fsm *FSM) error {
 				field := reflect.ValueOf(fsm.Object).Elem().FieldByName(optional.BindTo)
 				field.SetString(fsm.Current)
+				return nil
 			}
 			cb(fsm)
 			fsm.Desc.Callbacks.After = append(fsm.Desc.Callbacks.After, cb)
@@ -112,19 +104,38 @@ func (fsm *FSM) Fire(eventName string) (err error) {
 }
 
 func (transition *TransitionDesc) Apply(fsm *FSM) {
-	for _, fn := range fsm.Desc.Callbacks.Before {
-		fn(fsm)
+	fn := func(fsm *FSM, _ error) (*FSM, error) {
+		beforeCallbacks := append(fsm.Desc.Callbacks.Before, transition.Callbacks.Before...)
+		for _, fn := range beforeCallbacks {
+			err := fn(fsm)
+			if err != nil {
+				return fsm, err
+			}
+		}
+
+		fsm.Current = transition.To
+
+		afterCallbacks := append(fsm.Desc.Callbacks.After, transition.Callbacks.After...)
+		for _, fn := range afterCallbacks {
+			err := fn(fsm)
+			if err != nil {
+				return fsm, err
+			}
+		}
+
+		return fsm, nil
 	}
-	for _, fn := range transition.Callbacks.Before {
-		fn(fsm)
+
+	aroundCbs := transition.Callbacks.Around
+
+	cbStack := make([]func(*FSM, error) (*FSM, error), len(aroundCbs)+1)
+	cbStack[0] = fn
+
+	for i, piece := range aroundCbs {
+		cbStack[i+1] = piece(fsm, cbStack[i])
 	}
-	fsm.Current = transition.To
-	for _, fn := range transition.Callbacks.After {
-		fn(fsm)
-	}
-	for _, fn := range fsm.Desc.Callbacks.After {
-		fn(fsm)
-	}
+
+	cbStack[len(aroundCbs)](fsm, nil)
 }
 
 func (transition *TransitionDesc) IsValid(fsm *FSM) bool {
