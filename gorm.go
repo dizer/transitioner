@@ -6,11 +6,13 @@ import (
 
 type GormIntegration struct {
 	Tx *gorm.DB
+	Transactional bool
 }
 
-func (fsm *FSM) IntegrateGorm(db *gorm.DB) {
+// func (fsm *FSM) IntegrateGorm(db *gorm.DB) {
+func (fsm *FSM) IntegrateGorm(config GormIntegration) {
 
-	fsm.Gorm = GormIntegration{Tx: db}
+	fsm.Gorm = config
 
 	transactionCb := func(fsm *FSM, fn func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
 		return func(fsm *FSM, err error) (*FSM, error) {
@@ -19,7 +21,7 @@ func (fsm *FSM) IntegrateGorm(db *gorm.DB) {
 			}
 
 			oldTx := fsm.Gorm.Tx
-			tx := db.Begin()
+			tx := fsm.Gorm.Tx.Begin()
 
 			if tx.Error != nil {
 				return fsm, tx.Error
@@ -41,5 +43,7 @@ func (fsm *FSM) IntegrateGorm(db *gorm.DB) {
 		}
 	}
 
-	fsm.Desc.Callbacks.Around = append(fsm.Desc.Callbacks.Around, transactionCb)
+	if fsm.Gorm.Transactional {
+		fsm.Desc.Callbacks.Around = append(fsm.Desc.Callbacks.Around, transactionCb)
+	}
 }

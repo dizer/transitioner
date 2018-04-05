@@ -96,15 +96,14 @@ func (fsm *FSM) Fire(eventName string) (err error) {
 
 	for _, transition := range eventDesc.Transitions {
 		if transition.IsValid(fsm) {
-			transition.Apply(fsm)
-			break
+			return transition.Apply(fsm)
 		}
 	}
 
-	return nil
+	return fmt.Errorf("no available transitions found for event '%s' from  state '%s'", eventName, fsm.Current)
 }
 
-func (transition *TransitionDesc) Apply(fsm *FSM) {
+func (transition *TransitionDesc) Apply(fsm *FSM) error {
 	fn := func(fsm *FSM, _ error) (*FSM, error) {
 		beforeCallbacks := append(fsm.Desc.Callbacks.Before, transition.Callbacks.Before...)
 		for _, fn := range beforeCallbacks {
@@ -136,7 +135,8 @@ func (transition *TransitionDesc) Apply(fsm *FSM) {
 		cbStack[i+1] = piece(fsm, cbStack[i])
 	}
 
-	cbStack[len(aroundCbs)](fsm, nil)
+	_, err := cbStack[len(aroundCbs)](fsm, nil)
+	return err
 }
 
 func (transition *TransitionDesc) IsValid(fsm *FSM) bool {
