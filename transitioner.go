@@ -49,6 +49,13 @@ type BindParams struct {
 }
 
 func (fsm *FSM) Bind(object interface{}, bindField string) {
+	field := reflect.ValueOf(object).Elem().FieldByName(bindField)
+	current := field.Interface().(string)
+
+	if current != "" {
+		fsm.Current = current
+	}
+
 	fsm.Object = object
 	optional := OptionalParams{
 		BindTo: bindField,
