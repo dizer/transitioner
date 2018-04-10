@@ -27,17 +27,18 @@ func (fsm *FSM) IntegrateGorm(config GormIntegration) {
 				return fsm, tx.Error
 			}
 
-			fsm.Gorm.Tx = tx
+			defer func() {
+				if r := recover(); r != nil {
+					tx.Rollback()
+					panic(r)
+				}
 
-			retFSM, retERR := fn(fsm, err)
-
-			if retERR != nil {
-				tx.Rollback()
-			} else {
 				tx.Commit()
-			}
+				fsm.Gorm.Tx = oldTx
+			}()
 
-			fsm.Gorm.Tx = oldTx
+			fsm.Gorm.Tx = tx
+			retFSM, retERR := fn(fsm, err)
 
 			return retFSM, retERR
 		}
