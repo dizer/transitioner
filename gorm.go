@@ -5,8 +5,13 @@ import (
 )
 
 type GormIntegration struct {
-	Tx *gorm.DB
+	// Tx *gorm.DB
 	Transactional bool
+}
+
+type GormModel interface {
+	GetDB() *gorm.DB
+	SetDB(db *gorm.DB)
 }
 
 // func (fsm *FSM) IntegrateGorm(db *gorm.DB) {
@@ -20,8 +25,10 @@ func (fsm *FSM) IntegrateGorm(config GormIntegration) {
 				return fsm, err
 			}
 
-			oldTx := fsm.Gorm.Tx
-			tx := fsm.Gorm.Tx.Begin()
+			object := fsm.Object.(GormModel)
+
+			oldTx := object.GetDB()
+			tx := oldTx.Begin()
 
 			if tx.Error != nil {
 				return fsm, tx.Error
@@ -34,10 +41,10 @@ func (fsm *FSM) IntegrateGorm(config GormIntegration) {
 				}
 
 				tx.Commit()
-				fsm.Gorm.Tx = oldTx
+				object.SetDB(oldTx)
 			}()
 
-			fsm.Gorm.Tx = tx
+			object.SetDB(tx)
 			retFSM, retERR := fn(fsm, err)
 
 			return retFSM, retERR

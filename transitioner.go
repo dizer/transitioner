@@ -6,10 +6,11 @@ import (
 )
 
 type FSM struct {
-	Object  interface{}
-	Desc    FSMDesc
-	Current string
-	Gorm    GormIntegration
+	Object       interface{}
+	Desc         FSMDesc
+	Current      string
+	Gorm         GormIntegration
+	CurrentEvent *string
 }
 
 type FSMDesc struct {
@@ -95,6 +96,11 @@ func (fsm *FSM) State() string {
 }
 
 func (fsm *FSM) Fire(eventName string) (err error) {
+	fsm.CurrentEvent = &eventName
+	defer func() {
+		fsm.CurrentEvent = nil
+	} ()
+
 	eventDesc, err := fsm.getEventDesc(eventName)
 
 	if err != nil {
