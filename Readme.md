@@ -14,7 +14,6 @@ import (
 
 type Job struct {
   State    string
-  FSM      *tr.FSM
 }
 
 func (job *Job) Notify() error {
