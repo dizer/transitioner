@@ -16,7 +16,7 @@ func (obj *testObj) TrueGuard(*FSM) bool {
 
 func TestInitialState(t *testing.T) {
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
 		},
 	)
@@ -29,7 +29,7 @@ func TestInitialState(t *testing.T) {
 
 func TestFireEventNotExists(t *testing.T) {
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
 		},
 	)
@@ -41,17 +41,17 @@ func TestFireEventNotExists(t *testing.T) {
 
 func TestFireEvent(t *testing.T) {
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
-			Events: []EventDesc{
+			Events: []Event{
 				{
 					Name: "start",
-					Transitions: []TransitionDesc{
+					Transitions: []Transition{
 						{
 							From: []string{"initialized"},
 							To:   "started",
-							Guards: []GuardDesc{
-								{If: func(fsm *FSM) bool { return false }},
+							Guards: []Guard{
+								{If: func() bool { return false }},
 							},
 						},
 						{
@@ -62,7 +62,6 @@ func TestFireEvent(t *testing.T) {
 				},
 			},
 		},
-
 	)
 
 	fsm.Fire("start")
@@ -76,13 +75,13 @@ func TestBind(t *testing.T) {
 	obj := testObj{Field: "unchanged"}
 
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
-			Events: []EventDesc{
+			Events: []Event{
 				{
 					Name: "start",
-					Transitions: []TransitionDesc{
-						{From: []string{"initialized"}, To: "started"},
+					Transitions: []Transition{
+						{From: []string{"unchanged", "initialized"}, To: "started"},
 					},
 				},
 			},
@@ -91,8 +90,8 @@ func TestBind(t *testing.T) {
 
 	fsm.Bind(&obj, "Field")
 
-	if obj.Field != "initialized" {
-		t.Error("Bind() should set Field to 'initialized'")
+	if obj.Field != "unchanged" {
+		t.Error("Bind() should not change Field from 'unchanged'")
 	}
 
 	fsm.Fire("start")
@@ -103,21 +102,20 @@ func TestBind(t *testing.T) {
 }
 
 func TestGuardsAllow(t *testing.T) {
-	obj := testObj{Field: "unchanged", AnotherField: "pass guard"}
+	obj := testObj{Field: "", AnotherField: "pass guard"}
 
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
-			Events: []EventDesc{
+			Events: []Event{
 				{
 					Name: "start",
-					Transitions: []TransitionDesc{
+					Transitions: []Transition{
 						{
 							From: []string{"initialized"},
 							To:   "started",
-							Guards: []GuardDesc{
-								{If: func(fsm *FSM) bool {
-									obj := fsm.Object.(*testObj)
+							Guards: []Guard{
+								{If: func() bool {
 									return obj.AnotherField == "pass guard"
 								}},
 							},
@@ -126,7 +124,6 @@ func TestGuardsAllow(t *testing.T) {
 				},
 			},
 		},
-
 	)
 
 	fsm.Bind(&obj, "Field")
@@ -140,21 +137,20 @@ func TestGuardsAllow(t *testing.T) {
 }
 
 func TestGuardsDisallow(t *testing.T) {
-	obj := testObj{Field: "unchanged", AnotherField: "pass guard"}
+	obj := testObj{Field: "", AnotherField: "pass guard"}
 
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
-			Events: []EventDesc{
+			Events: []Event{
 				{
 					Name: "start",
-					Transitions: []TransitionDesc{
+					Transitions: []Transition{
 						{
 							From: []string{"initialized"},
 							To:   "started",
-							Guards: []GuardDesc{
-								{If: func(fsm *FSM) bool {
-									obj := fsm.Object.(*testObj)
+							Guards: []Guard{
+								{If: func() bool {
 									return obj.AnotherField != "pass guard"
 								}},
 							},
@@ -163,7 +159,6 @@ func TestGuardsDisallow(t *testing.T) {
 				},
 			},
 		},
-
 	)
 
 	fsm.Bind(&obj, "Field")
@@ -177,22 +172,21 @@ func TestGuardsDisallow(t *testing.T) {
 }
 
 func TestCallbacks(t *testing.T) {
-	obj := testObj{Field: "unchanged"}
+	obj := testObj{Field: ""}
 
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
-			Events: []EventDesc{
+			Events: []Event{
 				{
 					Name: "start",
-					Transitions: []TransitionDesc{
+					Transitions: []Transition{
 						{
 							From: []string{"initialized"},
 							To:   "failed",
-							Callbacks: CallbacksDesc{
-								After: []func(*FSM) error{
-									func(fsm *FSM) error {
-										obj := fsm.Object.(*testObj)
+							Callbacks: Callbacks{
+								After: []CallbackFunc{
+									func() error {
 										obj.AnotherField = "failure data"
 										return nil
 									},
@@ -203,7 +197,6 @@ func TestCallbacks(t *testing.T) {
 				},
 			},
 		},
-
 	)
 
 	fsm.Bind(&obj, "Field")
@@ -219,37 +212,37 @@ func TestCallbacksChain(t *testing.T) {
 	result := ""
 
 	fsm := Init(
-		FSMDesc{
+		FSMDescription{
 			Initial: "initialized",
-			Events: []EventDesc{
+			Events: []Event{
 				{
 					Name: "start",
-					Transitions: []TransitionDesc{
+					Transitions: []Transition{
 						{
 							From: []string{"initialized"},
 							To:   "running",
-							Callbacks: CallbacksDesc{
-								Around: []func(*FSM, func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
-									func(fsm *FSM, fn func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
-										return func(fsm *FSM, err error) (*FSM, error) {
+							Callbacks: Callbacks{
+								Around: []CallbackAroundFunc{
+									func(fn CallbackAroundPassFunc) CallbackAroundPassFunc {
+										return func(err error) error {
 											if err != nil {
-												return fsm, err
+												return err
 											}
 											result = result + "CB1 > "
-											retFSM, retERR := fn(fsm, err)
+											retERR := fn(err)
 											result = result + " < CB1"
-											return retFSM, retERR
+											return retERR
 										}
 									},
-									func(fsm *FSM, fn func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error) {
-										return func(fsm *FSM, err error) (*FSM, error) {
+									func(fn CallbackAroundPassFunc) CallbackAroundPassFunc {
+										return func(err error) error {
 											if err != nil {
-												return fsm, err
+												return err
 											}
 											result = result + "CB2 > "
-											retFSM, retERR := fn(fsm, err)
+											retERR := fn(err)
 											result = result + " < CB2"
-											return retFSM, retERR
+											return retERR
 										}
 									},
 								},

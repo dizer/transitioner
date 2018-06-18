@@ -5,48 +5,51 @@ import (
 	"reflect"
 )
 
+type CallbackFunc func() error
+type CallbackAroundPassFunc func(error) error
+type CallbackAroundFunc func(CallbackAroundPassFunc) CallbackAroundPassFunc
+
 type FSM struct {
 	Object       interface{}
-	Desc         FSMDesc
+	Description  FSMDescription
 	Current      string
-	Gorm         GormIntegration
 	CurrentEvent *string
 }
 
-type FSMDesc struct {
+type FSMDescription struct {
 	Initial   string
-	Events    []EventDesc
-	Callbacks CallbacksDesc
+	Events    []Event
+	Callbacks Callbacks
 }
 
-type EventDesc struct {
+type Event struct {
 	Name        string
-	Transitions []TransitionDesc
+	Transitions []Transition
 }
 
-type TransitionDesc struct {
+type Transition struct {
 	From      []string
 	To        string
-	Guards    []GuardDesc
-	Callbacks CallbacksDesc
+	Guards    []Guard
+	Callbacks Callbacks
 }
 
-type GuardDesc struct {
-	If func(*FSM) bool
+type Guard struct {
+	If func() bool
 }
 
-type CallbacksDesc struct {
-	Before []func(*FSM) error
-	After  []func(*FSM) error
-	Around []func(*FSM, func(*FSM, error) (*FSM, error)) func(*FSM, error) (*FSM, error)
+type Callbacks struct {
+	Before []CallbackFunc
+	After  []CallbackFunc
+	Around []CallbackAroundFunc
 }
 
-type OptionalParams struct {
-	BindTo string
-}
-
-type BindParams struct {
-	BindTo string
+func Init(desc FSMDescription) *FSM {
+	fsm := FSM{
+		Description: desc,
+	}
+	fsm.Load()
+	return &fsm
 }
 
 func (fsm *FSM) Bind(object interface{}, bindField string) {
@@ -58,37 +61,17 @@ func (fsm *FSM) Bind(object interface{}, bindField string) {
 	}
 
 	fsm.Object = object
-	optional := OptionalParams{
-		BindTo: bindField,
-	}
-	fsm.ApplyOptionals([]OptionalParams{optional})
-}
 
-func Init(desc FSMDesc, optionals ...OptionalParams) *FSM {
-	fsm := FSM{
-		Desc: desc,
+	cb := func() error {
+		field.SetString(fsm.Current)
+		return nil
 	}
-	fsm.Load()
-	fsm.ApplyOptionals(optionals)
-	return &fsm
-}
-
-func (fsm *FSM) ApplyOptionals(optionals []OptionalParams) {
-	for _, optional := range optionals {
-		if optional.BindTo != "" {
-			cb := func(fsm *FSM) error {
-				field := reflect.ValueOf(fsm.Object).Elem().FieldByName(optional.BindTo)
-				field.SetString(fsm.Current)
-				return nil
-			}
-			cb(fsm)
-			fsm.Desc.Callbacks.After = append(fsm.Desc.Callbacks.After, cb)
-		}
-	}
+	cb()
+	fsm.Description.Callbacks.After = append(fsm.Description.Callbacks.After, cb)
 }
 
 func (fsm *FSM) Load() {
-	fsm.Current = fsm.Desc.Initial
+	fsm.Current = fsm.Description.Initial
 }
 
 func (fsm *FSM) State() string {
@@ -96,10 +79,15 @@ func (fsm *FSM) State() string {
 }
 
 func (fsm *FSM) Fire(eventName string) (err error) {
+	if fsm == nil {
+		return fmt.Errorf("please init FSM first")
+	}
+
 	fsm.CurrentEvent = &eventName
+
 	defer func() {
 		fsm.CurrentEvent = nil
-	} ()
+	}()
 
 	eventDesc, err := fsm.getEventDesc(eventName)
 
@@ -116,50 +104,50 @@ func (fsm *FSM) Fire(eventName string) (err error) {
 	return fmt.Errorf("no available transitions found for event '%s' from  state '%s'", eventName, fsm.Current)
 }
 
-func (transition *TransitionDesc) Apply(fsm *FSM) error {
-	fn := func(fsm *FSM, _ error) (*FSM, error) {
-		beforeCallbacks := append(fsm.Desc.Callbacks.Before, transition.Callbacks.Before...)
+func (transition *Transition) Apply(fsm *FSM) error {
+	fn := func(_ error) error {
+		beforeCallbacks := append(fsm.Description.Callbacks.Before, transition.Callbacks.Before...)
 		for _, fn := range beforeCallbacks {
-			err := fn(fsm)
+			err := fn()
 			if err != nil {
-				return fsm, err
+				return err
 			}
 		}
 
 		fsm.Current = transition.To
 
-		afterCallbacks := append(fsm.Desc.Callbacks.After, transition.Callbacks.After...)
+		afterCallbacks := append(fsm.Description.Callbacks.After, transition.Callbacks.After...)
 		for _, fn := range afterCallbacks {
-			err := fn(fsm)
+			err := fn()
 			if err != nil {
-				return fsm, err
+				return err
 			}
 		}
 
-		return fsm, nil
+		return nil
 	}
 
-	aroundCbs := append(fsm.Desc.Callbacks.Around, transition.Callbacks.Around...)
+	aroundCbs := append(fsm.Description.Callbacks.Around, transition.Callbacks.Around...)
 
-	cbStack := make([]func(*FSM, error) (*FSM, error), len(aroundCbs)+1)
+	cbStack := make([]func(error) error, len(aroundCbs)+1)
 	cbStack[0] = fn
 
 	for i, piece := range aroundCbs {
-		cbStack[i+1] = piece(fsm, cbStack[i])
+		cbStack[i+1] = piece(cbStack[i])
 	}
 
-	_, err := cbStack[len(aroundCbs)](fsm, nil)
+	err := cbStack[len(aroundCbs)](nil)
 	return err
 }
 
-func (transition *TransitionDesc) IsValid(fsm *FSM) bool {
+func (transition *Transition) IsValid(fsm *FSM) bool {
 	inFrom := contains(transition.From, fsm.Current)
 	if !inFrom {
 		return false
 	}
 
 	for _, guard := range transition.Guards {
-		if !guard.If(fsm) {
+		if !guard.If() {
 			return false
 		}
 	}
@@ -167,8 +155,8 @@ func (transition *TransitionDesc) IsValid(fsm *FSM) bool {
 	return true
 }
 
-func (fsm *FSM) getEventDesc(eventName string) (eventDesc *EventDesc, err error) {
-	for _, e := range fsm.Desc.Events {
+func (fsm *FSM) getEventDesc(eventName string) (eventDesc *Event, err error) {
+	for _, e := range fsm.Description.Events {
 		if e.Name == eventName {
 			eventDesc = &e
 			break

@@ -1,85 +1,69 @@
 package main
 
 import (
-	"github.com/dizer/transitioner"
+	"database/sql"
 	"fmt"
+
+	tr "github.com/dizer/transitioner"
 )
 
 type Job struct {
-	State    string
-	FSM      *transitioner.FSM
+	State string
 }
 
-func (job *Job) Notify() {
+func (job *Job) Notify() error {
 	fmt.Println("Notifying...")
+	return nil
 }
 
-func main() {
-	job := Job{}
+func (job *Job) CanStop() bool {
+	return false
+}
 
-	fsm := transitioner.Init(
-		transitioner.FSMDesc{
+func (job *Job) Save(tx *sql.Tx) func() error {
+	return func() error {
+		_, err := tx.Exec("")
+		return err
+	}
+}
+
+// Example of auto-rollback on state change failure
+func (job *Job) FireTransactional(eventName string, db sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		}
+	}()
+
+	fsm := tr.Init(
+		tr.FSMDescription{
 			Initial: "sleeping",
-			Events: []transitioner.EventDesc{
+			Events: []tr.Event{
 
 				{
 					Name: "toggle",
-					Transitions: []transitioner.TransitionDesc{
-						// Will be used first suitable transition
-						{From: []string{"sleeping"}, To: "running"},
-						{From: []string{"running"}, To: "sleeping"},
-					},
-				},
-
-				{
-					Name: "run",
-					Transitions: []transitioner.TransitionDesc{
-						{
-							From: []string{"sleeping"},
-							To:   "running",
-							Callbacks: transitioner.CallbacksDesc{
-								After: []func(*transitioner.FSM) error {
-									func(fsm *transitioner.FSM) error {
-										job := fsm.Object.(*Job)
-										job.Notify()
-										return nil
-									},
-								},
-							},
-						},
-					},
-				},
-
-				{
-					Name: "stop",
-					Transitions: []transitioner.TransitionDesc{
-						{
-							From: []string{"running"},
-							To:   "sleeping",
-							// event "stop" will never transit from running to sleeping
-							Guards: []transitioner.GuardDesc{
-								{If: func(fsm *transitioner.FSM) bool {
-									return false
-								}},
-							},
-						},
+					Transitions: []tr.Transition{
+						{From: []string{"sleeping"}, To: "running", Callbacks: tr.Callbacks{After: []tr.CallbackFunc{job.Save(tx)}}},
+						{From: []string{"running"}, To: "sleeping", Callbacks: tr.Callbacks{After: []tr.CallbackFunc{job.Save(tx)}}},
 					},
 				},
 			},
 		},
 	)
 
-	fsm.Bind(&job, "State")
-	job.FSM = fsm
-
-	fmt.Println(job.FSM.Current) // sleeping
-
-	job.FSM.Fire("run")
-	fmt.Println(job.FSM.Current) // running
-
-	job.FSM.Fire("stop")
-	fmt.Println(job.FSM.Current) // running
-
-	job.FSM.Fire("toggle")
-	fmt.Println(job.FSM.Current) // sleeping
+	err = fsm.Fire(eventName)
+	if err != nil {
+		tx.Rollback()
+		return err
+	} else {
+		return tx.Commit()
+	}
 }
+
+func main() {}

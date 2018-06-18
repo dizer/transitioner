@@ -1,29 +1,14 @@
-# Transitioner, golang FSM
-
-Supports Events, Transitions, Guards and Callbacks (on global FSM and Transition levels).
-
-## Usage
-
-```go
 package main
 
 import (
-  tr "github.com/dizer/transitioner"
-  "fmt"
+	"fmt"
+	"testing"
+
+	tr "github.com/dizer/transitioner"
 )
 
-type Job struct {
-  State    string
-  FSM      *tr.FSM
-}
-
-func (job *Job) Notify() error {
-	fmt.Println("Notifying...")
-	return nil
-}
-
-func main() {
-  job := Job{}
+func ExampleCommon(t *testing.T) {
+	job := Job{}
 
 	fsm := tr.Init(
 		tr.FSMDescription{
@@ -82,10 +67,3 @@ func main() {
 	fsm.Fire("toggle")
 	fmt.Println(job.State) // sleeping
 }
-
-```
-
-## Transactional rollbacks
-
-You can use Transitioner with your SQL Lib to automatically rollback transactions on state transition failures.
-Please watch examples dir for more details.
