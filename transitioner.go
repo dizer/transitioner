@@ -3,6 +3,9 @@ package transitioner
 import (
 	"fmt"
 	"reflect"
+	"runtime"
+
+	"github.com/pkg/errors"
 )
 
 type CallbackFunc func() error
@@ -110,7 +113,7 @@ func (transition *Transition) Apply(fsm *FSM) error {
 		for _, fn := range beforeCallbacks {
 			err := fn()
 			if err != nil {
-				return err
+				return wrapCallbackError(err, fn)
 			}
 		}
 
@@ -120,7 +123,7 @@ func (transition *Transition) Apply(fsm *FSM) error {
 		for _, fn := range afterCallbacks {
 			err := fn()
 			if err != nil {
-				return err
+				return wrapCallbackError(err, fn)
 			}
 		}
 
@@ -177,4 +180,10 @@ func contains(s []string, e string) bool {
 		}
 	}
 	return false
+}
+
+func wrapCallbackError(err error, fn CallbackFunc) error {
+	uintptr, _, _, _ := runtime.Caller(0)
+	file, line := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).FileLine(uintptr)
+	return errors.Wrap(err, fmt.Sprintf("FSM Callback failed at %s:%d", file, line))
 }
