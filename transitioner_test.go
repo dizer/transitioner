@@ -1,6 +1,7 @@
 package transitioner
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -15,9 +16,9 @@ func (obj *testObj) TrueGuard(*FSM) bool {
 }
 
 func TestInitialState(t *testing.T) {
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 		},
 	)
 
@@ -28,21 +29,21 @@ func TestInitialState(t *testing.T) {
 }
 
 func TestFireEventNotExists(t *testing.T) {
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 		},
 	)
 	err := fsm.Fire("some-event")
 	if err == nil {
-		t.Error("undescribed event should give an error")
+		t.Error("fire unknown event returns an error")
 	}
 }
 
 func TestFireEvent(t *testing.T) {
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 			Events: []Event{
 				{
 					Name: "start",
@@ -64,19 +65,24 @@ func TestFireEvent(t *testing.T) {
 		},
 	)
 
-	fsm.Fire("start")
+	err := fsm.Fire("start")
+
+	if err != nil {
+		t.Error(err)
+	}
 
 	if fsm.State() != "failed" {
-		t.Error("expected state to be 'failed'")
+		t.Errorf("expected state to be '%s'", "failed")
 	}
 }
 
 func TestBind(t *testing.T) {
+	var err error
 	obj := testObj{Field: "unchanged"}
 
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 			Events: []Event{
 				{
 					Name: "start",
@@ -88,25 +94,34 @@ func TestBind(t *testing.T) {
 		},
 	)
 
-	fsm.Bind(&obj, "Field")
+	err = fsm.Bind(&obj.Field)
+	if err != nil {
+		t.Error(err)
+	}
+
 
 	if obj.Field != "unchanged" {
 		t.Error("Bind() should not change Field from 'unchanged'")
 	}
 
-	fsm.Fire("start")
+	err = fsm.Fire("start")
+
+	if err != nil {
+		t.Error(err)
+	}
 
 	if obj.Field != "started" {
-		t.Error("Binded field should be updated to 'started'")
+		t.Errorf("Bound field should be updated to '%s', but got '%s'", "started", obj.Field)
 	}
 }
 
 func TestGuardsAllow(t *testing.T) {
+	var err error
 	obj := testObj{Field: "", AnotherField: "pass guard"}
 
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 			Events: []Event{
 				{
 					Name: "start",
@@ -126,22 +141,29 @@ func TestGuardsAllow(t *testing.T) {
 		},
 	)
 
-	fsm.Bind(&obj, "Field")
+	err = fsm.Bind(&obj.Field)
+	if err != nil {
+		t.Error(err)
+	}
 
-	fsm.Fire("start")
+	err = fsm.Fire("start")
+	if err != nil {
+		t.Error(err)
+	}
 
-	if fsm.Current != "started" {
-		t.Error("Guards shoud allow transition")
+	if fsm.State() != "started" {
+		t.Error("Guards should allow transition")
 	}
 
 }
 
 func TestGuardsDisallow(t *testing.T) {
+	var err error
 	obj := testObj{Field: "", AnotherField: "pass guard"}
 
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 			Events: []Event{
 				{
 					Name: "start",
@@ -161,22 +183,28 @@ func TestGuardsDisallow(t *testing.T) {
 		},
 	)
 
-	fsm.Bind(&obj, "Field")
-
-	fsm.Fire("start")
-
-	if fsm.Current == "started" {
-		t.Error("Guards shoud not allow transition")
+	err = fsm.Bind(&obj.Field)
+	if err != nil {
+		t.Error(err)
 	}
 
+	err = fsm.Fire("start")
+	if err == nil {
+		t.Error(err)
+	}
+
+	if fsm.State() == "started" {
+		t.Error("Guards should not allow transition")
+	}
 }
 
 func TestCallbacks(t *testing.T) {
+	var err error
 	obj := testObj{Field: ""}
 
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 			Events: []Event{
 				{
 					Name: "start",
@@ -199,52 +227,38 @@ func TestCallbacks(t *testing.T) {
 		},
 	)
 
-	fsm.Bind(&obj, "Field")
+	err = fsm.Bind(&obj.Field)
+	if err != nil {
+		t.Error(err)
+	}
 
-	fsm.Fire("start")
+	err = fsm.Fire("start")
+	if err != nil {
+		t.Error(err)
+	}
 
 	if obj.AnotherField != "failure data" {
-		t.Error("Callbacks shoud be executes")
+		t.Error("Callbacks should be executes")
 	}
 }
 
-func TestCallbacksChain(t *testing.T) {
-	result := ""
+func TestAfterCallbacks(t *testing.T) {
+	var err error
+	obj := new(testObj)
 
-	fsm := Init(
+	fsm := GetFSM(
 		FSMDescription{
-			Initial: "initialized",
+			InitialState: "initialized",
 			Events: []Event{
 				{
-					Name: "start",
+					Name: "run",
 					Transitions: []Transition{
 						{
 							From: []string{"initialized"},
-							To:   "running",
+							To:   "succeed",
 							Callbacks: Callbacks{
-								Around: []CallbackAroundFunc{
-									func(fn CallbackAroundPassFunc) CallbackAroundPassFunc {
-										return func(err error) error {
-											if err != nil {
-												return err
-											}
-											result = result + "CB1 > "
-											retERR := fn(err)
-											result = result + " < CB1"
-											return retERR
-										}
-									},
-									func(fn CallbackAroundPassFunc) CallbackAroundPassFunc {
-										return func(err error) error {
-											if err != nil {
-												return err
-											}
-											result = result + "CB2 > "
-											retERR := fn(err)
-											result = result + " < CB2"
-											return retERR
-										}
-									},
+								After: []CallbackFunc{
+									func() error { return fmt.Errorf("example error")},
 								},
 							},
 						},
@@ -254,13 +268,17 @@ func TestCallbacksChain(t *testing.T) {
 		},
 	)
 
-	fsm.Fire("start")
-
-	if fsm.Current != "running" {
-		t.Error("Callbacks shoud stop transition")
+	err = fsm.Bind(&obj.Field)
+	if err != nil {
+		t.Error(err)
 	}
 
-	if result != "CB2 > CB1 >  < CB1 < CB2" {
-		t.Error("around callbacks shoud be stacked")
+	err = fsm.Fire("run")
+	if err == nil {
+		t.Error(err)
+	}
+
+	if fsm.State() != "initialized" {
+		t.Error("Callback error prevent transition")
 	}
 }

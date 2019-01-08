@@ -2,17 +2,23 @@ package main
 
 import (
 	"fmt"
-	"testing"
-
 	tr "github.com/dizer/transitioner"
 )
 
-func ExampleCommon(t *testing.T) {
+type Job struct {
+	State string
+}
+
+func (job *Job) CanStop() bool {
+	return false
+}
+
+func ExampleStates(){
 	job := Job{}
 
-	fsm := tr.Init(
+	fsm := tr.GetFSM(
 		tr.FSMDescription{
-			Initial: "sleeping",
+			InitialState: "sleeping",
 			Events: []tr.Event{
 
 				{
@@ -30,9 +36,6 @@ func ExampleCommon(t *testing.T) {
 						{
 							From: []string{"sleeping"},
 							To:   "running",
-							Callbacks: tr.Callbacks{
-								After: []tr.CallbackFunc{job.Notify},
-							},
 						},
 					},
 				},
@@ -54,16 +57,21 @@ func ExampleCommon(t *testing.T) {
 		},
 	)
 
-	fsm.Bind(&job, "State")
-
-	fmt.Println(job.State) // sleeping
+	fsm.Bind(&job.State)
+	fmt.Println(job.State)
 
 	fsm.Fire("run")
-	fmt.Println(job.State) // running
+	fmt.Println(job.State)
 
 	fsm.Fire("stop")
-	fmt.Println(job.State) // running
+	fmt.Println(job.State)
 
 	fsm.Fire("toggle")
-	fmt.Println(job.State) // sleeping
+	fmt.Println(job.State)
+
+	// Output:
+	// sleeping
+	// running
+	// running
+	// sleeping
 }
